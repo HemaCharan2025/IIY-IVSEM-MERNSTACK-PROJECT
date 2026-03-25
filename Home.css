@@ -1,0 +1,94 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import axios from 'axios';
+import { format } from 'date-fns';
+import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
+import BlogCard from '../components/BlogCard';
+import './Profile.css';
+
+export default function Profile() {
+  const { id } = useParams();
+  const { user, updateUser } = useAuth();
+  const [profile, setProfile] = useState(null);
+  const [blogs, setBlogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ username: '', bio: '', avatar: '' });
+  const [saving, setSaving] = useState(false);
+  const isOwn = user && user._id === id;
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [profileRes, blogsRes] = await Promise.all([
+          axios.get('/api/users/' + id),
+          axios.get('/api/users/' + id + '/blogs'),
+        ]);
+        setProfile(profileRes.data.user);
+        setBlogs(blogsRes.data.blogs);
+        setEditForm({ username: profileRes.data.user.username, bio: profileRes.data.user.bio || '', avatar: profileRes.data.user.avatar || '' });
+      } catch { toast.error('User not found'); }
+      finally { setLoading(false); }
+    };
+    fetchData();
+  }, [id]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const { data } = await axios.put('/api/users/profile/update', editForm);
+      setProfile(data.user); updateUser(data.user); setEditing(false); toast.success('Profile updated!');
+    } catch (err) { toast.error(err.response?.data?.message || 'Update failed'); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="page-layout"><div className="container profile-page"><div className="profile-header-card"><div className="skeleton" style={{ width: 80, height: 80, borderRadius: '50%', margin: '0 auto 16px' }} /><div className="skeleton" style={{ width: 160, height: 24, margin: '0 auto 10px' }} /></div></div></div>;
+  if (!profile) return null;
+
+  return (
+    <div className="page-layout">
+      <div className="container profile-page animate-in">
+        <div className="profile-header-card">
+          <div className="profile-avatar-lg">
+            {profile.avatar ? <img src={profile.avatar} alt={profile.username} /> : <span>{profile.username[0].toUpperCase()}</span>}
+          </div>
+          {editing ? (
+            <div className="edit-form">
+              <div className="form-group"><label>Username</label><input type="text" value={editForm.username} onChange={e => setEditForm({ ...editForm, username: e.target.value })} className="form-control" maxLength={30} /></div>
+              <div className="form-group"><label>Bio</label><textarea value={editForm.bio} onChange={e => setEditForm({ ...editForm, bio: e.target.value })} className="form-control" rows={3} maxLength={200} placeholder="Tell us about yourself..." /></div>
+              <div className="form-group"><label>Avatar URL</label><input type="url" value={editForm.avatar} onChange={e => setEditForm({ ...editForm, avatar: e.target.value })} className="form-control" placeholder="https://..." /></div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                <button onClick={() => setEditing(false)} className="btn btn-ghost">Cancel</button>
+                <button onClick={handleSave} className="btn btn-primary" disabled={saving}>{saving ? <span className="btn-spinner" /> : 'Save Changes'}</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <h1 className="profile-name">{profile.username}</h1>
+              {profile.bio && <p className="profile-bio">{profile.bio}</p>}
+              <p className="profile-joined">Member since {format(new Date(profile.createdAt), 'MMMM yyyy')}</p>
+              <div className="profile-stats-row">
+                <div className="profile-stat"><span className="ps-value">{blogs.length}</span><span className="ps-label">Blogs</span></div>
+                <div className="profile-stat-divider" />
+                <div className="profile-stat"><span className="ps-value">{blogs.reduce((s, b) => s + (b.likes?.length || 0), 0)}</span><span className="ps-label">Likes</span></div>
+                <div className="profile-stat-divider" />
+                <div className="profile-stat"><span className="ps-value">{blogs.reduce((s, b) => s + (b.views || 0), 0)}</span><span className="ps-label">Views</span></div>
+              </div>
+              {isOwn && <button onClick={() => setEditing(true)} className="btn btn-outline" style={{ marginTop: 20 }}>Edit Profile</button>}
+            </>
+          )}
+        </div>
+        <div className="profile-blogs">
+          <h2 className="section-title">{isOwn ? 'Your Blogs' : profile.username + "'s Blogs"}</h2>
+          {blogs.length === 0 ? (
+            <div className="empty-profile"><p>No published blogs yet.</p>{isOwn && <Link to="/create" className="btn btn-primary" style={{ marginTop: 14 }}>Write First Blog</Link>}</div>
+          ) : (
+            <div className="profile-blogs-grid">{blogs.map(blog => <BlogCard key={blog._id} blog={blog} />)}</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
